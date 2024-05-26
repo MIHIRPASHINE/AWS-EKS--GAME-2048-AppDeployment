@@ -3,6 +3,9 @@ In this project i have deployed the game-2048 application on kubernetes cluster 
 
 ## Introduction
 
+![image](https://github.com/MIHIRPASHINE/AWS-EKS-GAME-2048-AppDeployment/assets/138210028/2290dbca-f133-4cdb-bad5-8b9ebdc49112)
+
+
 ## Table of Contents:
 
 1. [Understanding Kubernetes Fundamentals](#understanding-kubernetes-fundamentals)
