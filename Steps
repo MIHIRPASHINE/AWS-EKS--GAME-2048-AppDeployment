@@ -1,0 +1,128 @@
+
+#install cli 
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+
+unzip awscliv2.zip
+
+sudo ./aws/install --update
+
+aws configure
+
+
+#install kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+
+chmod +x ./kubectl
+
+sudo mv ./kubectl /usr/local/bin/kubectl
+
+kubectl version --client
+
+
+#install eksctl
+curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+
+sudo mv /tmp/eksctl /usr/local/bin
+
+eksctl version
+
+
+#create a cluster on eks from aws cli
+eksctl create cluster --name demo-cluster --region us-east-1 --fargate
+
+#Configure kubectl to Communicate with the eks Cluster
+aws eks update-kubeconfig --name demo-cluster --region us-east-1
+
+#create a fargate profile and attach the namespace --game-2048
+eksctl create fargateprofile \
+--cluster demo-cluster \
+--region us-east-1 \
+--name alb-sample-app \
+--namespace game-2048
+
+#run the following command to execute the yaml.file for creating a set of resources to be created in a Kubernetes cluster, specifically for deploying a game application, presumably a version of the "2048" game.
+
+kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.5.4/docs/examples/2048/2048_full.yaml
+
+you will get a error: error: exec plugin: invalid apiVersion "client.authentication.k8s.io/v1alpha1"
+
+#to address the error navigate to kubeconfig file and edit the api
+sudo vim .kube/config    
+
+edit the api version from v1aplha1 to apiVersion: client.authentication.k8s.io/v1beta1
+
+now run the command, kubectl apply -f https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.5.4/docs/examples/2048/2048_full.yaml
+
+#to check if the pods are in running state or not.
+kubectl get pods -n game-2048 -w
+
+#to check, whether service is in running state or not.
+kubectl get svc -n game-2048
+
+#to check if the ingress resource was created or not.
+kubectl get ingress -n game-2048
+
+#to make the alb controller i.e running talk to alb and some aws resources, need some iam permission , that's why IAM OIDC provider.
+eksctl utils associate-iam-oidc-provider --cluster demo-cluster --approve
+
+#create a iam policy for alb to grant permissions
+curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.5.4/docs/install/iam_policy.json
+
+aws iam create-policy \
+--policy-name AWSLoadBalancerControllerIAMPolicy \
+--policy-document file://iam_policy.json
+    =If showing error, then through console delete the existing policy with the same name
+
+# attaching role to service account of the pod
+eksctl create iamserviceaccount \
+--cluster=demo-cluster \
+--namespace=kube-system \
+--name=aws-load-balancer-controller \
+--role-name AmazonEKSLoadBalancerControllerRole \
+--attach-policy-arn=arn:aws:iam::730335530908:policy/AWSLoadBalancerControllerIAMPolicy \
+--approve
+           #make sure there are no existing IAM Policy with smae name i.e AWSLoadBalancerControllerIAMPolicy
+
+#create alb using helm chart
+  
+  #install helm
+  curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+  chmod 700 get_helm.sh
+  ./get_helm.sh
+
+  #create alb controller using helm
+  helm repo add eks https://aws.github.io/eks-charts
+
+  #check for updates
+  helm repo update eks
+
+#to install aws-lb-controller
+
+helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system \
+--set clusterName=demo-cluster \
+--set serviceAccount.create=false \
+--set serviceAccount.name=aws-load-balancer-controller \
+--set region=us-east-1 \
+--set vpcId=vpc-013be4d92d3feffa4  #make sure edit vpc id #go to cluster --> networking
+           
+#to verify if load-balancer controller is ready or not
+kubectl get deployment -n kube-system aws-load-balancer-controller   #status should be: aws-load-balancer-controller   2/2
+
+#verify if the pods are running or not
+kubectl get deploy -n kube-system
+
+#now, go to ec2 through console and check the load balancers section, if lb is created or not.
+#lb controller has created the load balancer, as we sumbitted a ingress resource
+
+#run the following command to get the address
+#this address is the created by ingress controller, considering the ingress resource
+kubectl get ingress -n game-2048
+
+
+
+#for theoretical explanation of the project
+#https://medium.com/@awsdevopsnani/deploying-the-2048-game-application-on-aws-eks-platform-using-ingress-537edd547764
+
+#https://aws.plainenglish.io/deployment-of-2048-game-via-eks-cluster-using-ingress-10d396cdb87
+
+#https://medium.com/@musinde/launching-2048-game-on-eks-cluster-aws-project-13aec8b2f476
